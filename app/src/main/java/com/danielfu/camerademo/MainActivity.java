@@ -31,13 +31,13 @@ public class MainActivity extends AppCompatActivity {
     private static final int REQUEST_OPEN_GALLERY = 0x022;
     private static final int REQUEST_CROP_PHOTO = 0x033;
 
-    //图像保存的 文件夹路径 .../CaCameraDemo/PictureDir
+    //图像保存的 文件夹路径 .../CameraDemo/PictureDir
     private static String pictureDir = Environment.getExternalStorageDirectory().getAbsolutePath() + "/CameraDemo/PictureDir";
 
-    //拍照保存的原 图像路径 .../CaCameraDemo/PictureDir/Original/{time}.jpg
+    //拍照保存的原 图像路径 .../CameraDemo/PictureDir/Original/{time}.jpg
     private static String ImgPathOri;
 
-    //裁剪保存的裁剪图 图像路径 .../CaCameraDemo/PictureDir/Crop/{time}.jpg
+    //裁剪保存的裁剪图 图像路径 .../CameraDemo/PictureDir/Crop/{time}.jpg
     private static String ImgPathCrop;
 
     private String ImgPathSel; //从相册选择的图片路径
@@ -188,11 +188,12 @@ public class MainActivity extends AppCompatActivity {
         //data的返回值根据
         switch (requestCode) {
             case REQUEST_OPEN_CAMERA:
-                if (data == null) {
-                    Log.i("TAG_CAMERA", "Take pictures after the return data is empty");
-                } else {
-                    Log.i("TAG_CAMERA", data.getData().toString());
-                }
+//                测试putExtra(MediaStore.EXTRA_OUTPUT)是否返回data
+//                if (data == null) {
+//                    Log.i("TAG_CAMERA", "Take pictures after the return data is empty");
+//                } else {
+//                    Log.i("TAG_CAMERA", data.getData().toString());
+//                }
                 cropPhoto(Uri.fromFile(new File(ImgPathOri)));
                 break;
             case REQUEST_OPEN_GALLERY:
