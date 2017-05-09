@@ -3,9 +3,6 @@ package com.danielfu.camerademo;
 import android.Manifest;
 import android.content.Intent;
 import android.content.pm.PackageManager;
-import android.content.pm.ResolveInfo;
-import android.graphics.Bitmap;
-import android.graphics.BitmapFactory;
 import android.graphics.drawable.ColorDrawable;
 import android.net.Uri;
 import android.os.Build;
@@ -31,7 +28,6 @@ import java.io.File;
 import java.io.IOException;
 import java.text.SimpleDateFormat;
 import java.util.Date;
-import java.util.List;
 
 public class MainActivity extends AppCompatActivity implements View.OnClickListener {
 
@@ -43,16 +39,15 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
     private static final int REQUEST_OPEN_CAMERA = 0x011;
     private static final int REQUEST_OPEN_GALLERY = 0x022;
     private static final int REQUEST_CROP_PHOTO = 0x033;
+    private static final int REQUEST_PERMISSIONS = 0x044;
     //原图像 路径
     private static String imgPathOri;
     //裁剪图像 路径
     private static String imgPathCrop;
-    //原图像 路径
+    //原图像 URI
     private Uri imgUriOri;
+    //裁剪图像 URI
     private Uri imgUriCrop;
-
-    private static final int REQUEST_PERMISSIONS = 0x044;
-
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -84,14 +79,12 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             if (ActivityCompat.shouldShowRequestPermissionRationale(this, Manifest.permission.CAMERA)) {
                 Toast.makeText(this, "用户曾拒绝打开相机权限", Toast.LENGTH_SHORT).show();
             } else {
+                //注册相机权限
                 ActivityCompat.requestPermissions(this,
                         permissions,
                         REQUEST_PERMISSIONS);
-
             }
         }
-
-
     }
 
     private void initViews() {
@@ -148,17 +141,7 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
 
     /**
      * 打开相机
-     * 将相机获得的照片保存在SdCard中 路径为ImgPathOri
-     * 注意：如果指定了MediaStore.EXTRA_OUTPUT，相机返回的data为空
-     * <p>
-     * 伪源码：
-     * if (mSaveUri != null) { //存在mSaveUri，即指定了目标uri
-     * outputStream.write(ContentResolver.openOutputStream(mSaveUri))
-     * setResult(RESULT_OK);
-     * }else{
-     * Bitmap bitmap = createCaptureBitmap(data);
-     * setResult(RESULT_OK, new Intent("inline-data").putExtra("data", bitmap));
-     * }
+     * 7.0中如果需要调用系统(eg:裁剪)/其他应用，必须用FileProvider提供Content Uri，并且将Uri赋予读写的权限
      */
     private void openCamera() {
         Intent intent = new Intent(MediaStore.ACTION_IMAGE_CAPTURE);// 打开相机
@@ -169,42 +152,44 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
             e.printStackTrace();
         }
         if (oriPhotoFile != null) {
-            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT) {
+            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
                 imgUriOri = Uri.fromFile(oriPhotoFile);
-                List<ResolveInfo> resInfoList = getPackageManager().queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY);
-                for (ResolveInfo resolveInfo : resInfoList) {
-                    String packageName = resolveInfo.activityInfo.packageName;
-                    grantUriPermission(packageName, imgUriOri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                }
             } else {
                 imgUriOri = FileProvider.getUriForFile(this, getPackageName() + ".provider", oriPhotoFile);
             }
+            intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+            intent.putExtra(MediaStore.EXTRA_OUTPUT, imgUriOri);
+            startActivityForResult(intent, REQUEST_OPEN_CAMERA);
+
+            // 动态grant权限
+            // 如果在xml中已经定义android:grantUriPermissions="true"
+            // 则只需要intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);即可
+            //            List<ResolveInfo> resInfoList = getPackageManager().queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY);
+            //            for (ResolveInfo resolveInfo : resInfoList) {
+            //                String packageName = resolveInfo.activityInfo.packageName;
+            //                grantUriPermission(packageName, imgUriOri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            //            }
             Log.i(TAG, "openCamera_imgPathOri:" + imgPathOri);
             Log.i(TAG, "openCamera_imgUriOri:" + imgUriOri.toString());
-            intent.putExtra(MediaStore.EXTRA_OUTPUT, imgUriOri); //指定拍照后保存图片的URI
-            startActivityForResult(intent, REQUEST_OPEN_CAMERA);
         }
     }
 
-    /**
-     * 打开相册
-     * ACTION_GET_CONTENT 允许用户选择特定类型的数据并返回
-     * Android 7.0 (API level 24) 或者更高的版本返回的Uri格式file:// URI，不同于之前的content:// URI
-     * So，
-     * 在获取Uri的时候需要用FileProvider来设置共享的目录和类型
-     * <p>
-     * http://www.jcodecraeer.com/a/anzhuokaifa/androidkaifa/2014/1026/1845.html
-     */
+
     private void openGallery() {
-        //        Intent intent = new Intent(ACTION_PICK, null);
-        Intent intent = new Intent(Intent.ACTION_GET_CONTENT);
-        intent.setDataAndType(MediaStore.Images.Media.EXTERNAL_CONTENT_URI, "image/*");
+        Intent intent = new Intent();
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.KITKAT) {
+            intent.setAction(Intent.ACTION_OPEN_DOCUMENT);
+        } else {
+            intent.setAction(Intent.ACTION_GET_CONTENT);
+//            intent.setAction(Intent.ACTION_PICK);
+        }
+        intent.setType("image/*");
         startActivityForResult(intent, REQUEST_OPEN_GALLERY);
     }
 
+
     /**
      * 裁剪图片
-     *
      * @param uri 需要 裁剪图像的Uri
      */
     public void cropPhoto(Uri uri) {
@@ -215,31 +200,31 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         } catch (IOException e) {
             e.printStackTrace();
         }
+
         if (cropPhotoFile != null) {
-            //            if (Build.VERSION.SDK_INT <= Build.VERSION_CODES.KITKAT) {
-            //                imgUriCrop = Uri.fromFile(cropPhotoFile);
-            //                List<ResolveInfo> resInfoList = getPackageManager().queryIntentActivities(intent, PackageManager.MATCH_DEFAULT_ONLY);
-            //                for (ResolveInfo resolveInfo : resInfoList) {
-            //                    String packageName = resolveInfo.activityInfo.packageName;
-            //                    grantUriPermission(packageName, uri, Intent.FLAG_GRANT_WRITE_URI_PERMISSION | Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            //                }
-            //            }else{
-            //                imgUriCrop = FileProvider.getUriForFile(this, getPackageName() + ".provider", cropPhotoFile);
-            //            }
+//            if (Build.VERSION.SDK_INT < Build.VERSION_CODES.N) {
+//                imgUriCrop = Uri.fromFile(cropPhotoFile);
+//            }else{
+//                imgUriCrop = FileProvider.getUriForFile(this, getPackageName() + ".provider", cropPhotoFile);
+//            }
+
+            //7.0 安全机制下不允许保存裁剪后的图片
+            //所以仅仅将File Uri传入MediaStore.EXTRA_OUTPUT来保存裁剪后的图像
             imgUriCrop = Uri.fromFile(cropPhotoFile);
 
-            Log.i(TAG, "CropPhoto_imgPathCrop:" + imgPathCrop.toString());
-            Log.i(TAG, "CropPhoto_imgUriCrop:" + imgUriCrop.toString());
             intent.setDataAndType(uri, "image/*");
             intent.putExtra("crop", true);
             intent.putExtra("aspectX", 1);
             intent.putExtra("aspectY", 1);
             intent.putExtra("outputX", 300);
             intent.putExtra("outputY", 300);
-            //            intent.putExtra("return-data", true);
+            intent.putExtra("return-data", false);
             intent.putExtra(MediaStore.EXTRA_OUTPUT, imgUriCrop);
             intent.setFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
             startActivityForResult(intent, REQUEST_CROP_PHOTO);
+
+            Log.i(TAG, "cropPhoto_imgPathCrop:" + imgPathCrop.toString());
+            Log.i(TAG, "cropPhoto_imgUriCrop:" + imgUriCrop.toString());
         }
     }
 
@@ -252,35 +237,43 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         //data的返回值根据
         switch (requestCode) {
             case REQUEST_OPEN_CAMERA:
-                //                测试putExtra(MediaStore.EXTRA_OUTPUT)是否返回data
-                //                if (data == null) {
-                //                    Log.i("TAG_CAMERA", "Take pictures after the return data is empty");
-                //                } else {
-                //                    Log.i("TAG_CAMERA", data.getData().toString());
-                //                }
                 addPicToGallery(imgPathOri);
                 cropPhoto(imgUriOri);
                 Log.i(TAG, "openCameraResult_imgPathOri:" + imgPathOri);
                 Log.i(TAG, "openCameraResult_imgUriOri:" + imgUriOri.toString());
-
                 break;
             case REQUEST_OPEN_GALLERY:
                 if (data != null) {
-                    //获取到用户所选图片的Uri
-                    Uri uriSelPhoto = data.getData();
-                    cropPhoto(uriSelPhoto);
+                    Uri imgUriSel = data.getData();
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        //打开相册会返回一个经过图像选择器安全化的Uri，直接放入裁剪程序会不识别，抛出[暂不支持此类型：华为7.0]
+                        //formatUri会返回根据Uri解析出的真实路径
+                        String imgPathSel = UriUtils.formatUri(this, imgUriSel);
+                        //根据真实路径转成File,然后通过应用程序重新安全化，再放入裁剪程序中才可以识别
+                        cropPhoto(FileProvider.getUriForFile(this, getPackageName() + ".provider", new File(imgPathSel)));
+                        Log.i(TAG, "Kit_sel_path:" + imgPathSel);
+                        Log.i(TAG, "Kit_sel_uri:" + Uri.fromFile(new File(imgPathSel)));
+                    } else {
+                        cropPhoto(imgUriSel);
+                    }
+                    Log.i(TAG, "openGalleryResult_imgUriSel:" + imgUriSel);
                 }
                 break;
             case REQUEST_CROP_PHOTO:
                 addPicToGallery(imgPathCrop);
-                imageViewSetPic(ivImage, imgPathCrop);
-                //                revokeUriPermission(imgUriCrop, Intent.FLAG_GRANT_READ_URI_PERMISSION);
-                Log.i(TAG, "openCameraResult_imgPathCrop:" + imgPathCrop);
-                Log.i(TAG, "CropPhotoResult_imgUriCrop:" + imgUriCrop.toString());
+                ImageUtils.imageViewSetPic(ivImage, imgPathCrop);
+                revokeUriPermission(imgUriCrop, Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_WRITE_URI_PERMISSION);
+                Log.i(TAG, "cropPhotoResult_imgPathCrop:" + imgPathCrop);
+                Log.i(TAG, "cropPhotoResult_imgUriCrop:" + imgUriCrop.toString());
                 break;
         }
     }
 
+    /**
+     * 创建原图像保存的文件
+     * @return
+     * @throws IOException
+     */
     private File createOriImageFile() throws IOException {
         String imgNameOri = "HomePic_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
         File pictureDirOri = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES).getAbsolutePath() + "/OriPicture");
@@ -294,9 +287,13 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         );
         imgPathOri = image.getAbsolutePath();
         return image;
-
     }
 
+    /**
+     * 创建裁剪图像保存的文件
+     * @return
+     * @throws IOException
+     */
     private File createCropImageFile() throws IOException {
         String imgNameCrop = "HomePic_" + new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date());
         File pictureDirCrop = new File(getExternalFilesDir(Environment.DIRECTORY_PICTURES).getAbsolutePath() + "/CropPicture");
@@ -310,37 +307,6 @@ public class MainActivity extends AppCompatActivity implements View.OnClickListe
         );
         imgPathCrop = image.getAbsolutePath();
         return image;
-    }
-
-    /**
-     * ImageView设置优化内存使用后的Bitmap
-     * 返回一个等同于ImageView宽高的bitmap
-     *
-     * @param view    ImageView
-     * @param imgPath 图像路径
-     */
-    private void imageViewSetPic(ImageView view, String imgPath) {
-        // Get the dimensions of the View
-        int targetW = view.getWidth();
-        int targetH = view.getHeight();
-
-        // Get the dimensions of the bitmap
-        BitmapFactory.Options bmOptions = new BitmapFactory.Options();
-        bmOptions.inJustDecodeBounds = true;
-        BitmapFactory.decodeFile(imgPath, bmOptions);
-        int photoW = bmOptions.outWidth;
-        int photoH = bmOptions.outHeight;
-
-        // Determine how much to scale down the image
-        int scaleFactor = Math.min(photoW / targetW, photoH / targetH);
-
-        // Decode the image file into a Bitmap sized to fill the View
-        bmOptions.inJustDecodeBounds = false;
-        bmOptions.inSampleSize = scaleFactor;
-        bmOptions.inPurgeable = true;
-
-        Bitmap bitmap = BitmapFactory.decodeFile(imgPath, bmOptions);
-        view.setImageBitmap(bitmap);
     }
 
     /**
